@@ -2,19 +2,25 @@ name: 地下厂信息每日采集
 
 on:
   schedule:
-    # 每天早上8点运行（UTC时间0点，北京时间+8）
-    - cron: '0 0 * * *'
-  workflow_dispatch:  # 允许手动触发
+    - cron: '0 0 * * *'  # 每天UTC 0点（北京时间8点）
+  workflow_dispatch:  # 手动触发
+
+permissions:
+  contents: write
+  actions: read
+  checks: read
 
 jobs:
   crawl:
     runs-on: ubuntu-latest
     
     steps:
-    - uses: actions/checkout@v4  # 同时升级到v4
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
     
     - name: 设置Python
-      uses: actions/setup-python@v5  # 也升级到v5
+      uses: actions/setup-python@v5
       with:
         python-version: '3.10'
     
@@ -25,23 +31,39 @@ jobs:
     - name: 运行爬虫
       run: |
         python underground_wastewater_crawler.py
+        echo "爬虫运行完成时间: $(date)" >> run_log.txt
+        echo "抓取数据条数: $(jq length underground_wastewater_data.json)" >> run_log.txt
     
-    - name: 上传数据文件
-      uses: actions/upload-artifact@v4  # 关键修复：v3 → v4
-      with:
-        name: wastewater-data-${{ github.run_id }}  # v4要求artifact名称唯一
-        path: |
-          underground_wastewater_data.json
-          underground_wastewater_data.csv
-        retention-days: 30  # 保留30天
+    # ===== 飞书自动推送（新增） =====
+    - name: 推送到飞书多维表格
+      env:
+        FEISHU_APP_ID: ${{ secrets.FEISHU_APP_ID }}
+        FEISHU_APP_SECRET: ${{ secrets.FEISHU_APP_SECRET }}
+        FEISHU_BASE_ID: ${{ secrets.FEISHU_BASE_ID }}
+        FEISHU_TABLE_ID: ${{ secrets.FEISHU_TABLE_ID }}
+      run: |
+        echo "开始推送到飞书..."
+        python feishu_uploader.py underground_wastewater_data.json
+        echo "飞书推送完成"
     
-    # 可选：提交数据到仓库（保留历史）
-    - name: 提交数据到仓库
+    - name: 配置Git
       run: |
         git config --local user.email "action@github.com"
         git config --local user.name "GitHub Action"
+    
+    - name: 提交数据到仓库
+      run: |
         git add -A
-        git commit -m "更新数据 $(date +'%Y-%m-%d')" || exit 0
+        git commit -m "🤖 自动更新地下厂数据 $(date +'%Y-%m-%d %H:%M')" || echo "没有变更需要提交"
         git push
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: 上传数据文件（备份）
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: wastewater-data-${{ github.run_id }}
+        path: |
+          underground_wastewater_data.json
+          underground_wastewater_data.csv
+          run_log.txt
+        retention-days: 30
