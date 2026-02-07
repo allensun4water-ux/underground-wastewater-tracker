@@ -1,0 +1,44 @@
+name: 地下厂信息每日采集
+
+on:
+  schedule:
+    # 每天早上8点运行（UTC时间0点，北京时间+8）
+    - cron: '0 0 * * *'
+  workflow_dispatch:  # 允许手动触发
+
+jobs:
+  crawl:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: 设置Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+    
+    - name: 安装依赖
+      run: |
+        pip install requests beautifulsoup4
+    
+    - name: 运行爬虫
+      run: |
+        python underground_wastewater_crawler.py
+    
+    - name: 上传数据文件
+      uses: actions/upload-artifact@v3
+      with:
+        name: wastewater-data-${{ github.run_date }}
+        path: |
+          underground_wastewater_data.json
+          underground_wastewater_data.csv
+    
+    # 可选：提交数据到仓库（保留历史）
+    - name: 提交数据到仓库
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git add -A
+        git commit -m "更新数据 $(date +'%Y-%m-%d')" || exit 0
+        git push
