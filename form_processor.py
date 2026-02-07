@@ -167,7 +167,7 @@ class FormProcessor:
                 "工程总投资_亿元": data.get("工程总投资_亿元"),
                 "地理位置": data.get("地理位置", ""),
                 "投资方总包方": data.get("投资方总包方", ""),
-                "抓取时间": data.get("抓取时间", datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
+               "抓取时间": int(datetime.now().timestamp()) * 1000,  # 飞书需要毫秒时间戳,
                 "数据置信度": data.get("数据置信度", "低"),
                 "处理状态": data.get("处理状态", "待清洗")
             }
