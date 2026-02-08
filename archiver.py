@@ -5,6 +5,7 @@
 import os
 import requests
 import hashlib
+import re  # 新增一行
 from datetime import datetime
 from urllib.parse import urlparse
 
