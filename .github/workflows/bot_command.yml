@@ -41,18 +41,28 @@ jobs:
       run: |
         python bot_handler.py "${{ github.event.inputs.message }}"
     
-          - name: 提交网页存储到仓库
-        run: |
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
-          git add web_archives/
-          git commit -m "📦 网页存档 $(date +'%Y-%m-%d %H:%M')" || echo "无变更需要提交"
-          
-          # 先拉取远程更新，避免推送冲突
-          git pull origin main --rebase || true
-          
-          # 重新提交（如果有冲突解决后的合并）
-          git commit -m "📦 网页存档 $(date +'%Y-%m-%d %H:%M')" || true
-          
-          # 再推送
-          git push origin main
+    - name: 提交网页存档到仓库
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        
+        # 1. 先暂存当前变更（如果有）
+        git stash push -m "temp-changes" || true
+        
+        # 2. 拉取远程最新
+        git pull origin main --rebase || true
+        
+        # 3. 恢复暂存
+        git stash pop || true
+        
+        # 4. 重新添加存档文件（避免冲突覆盖）
+        git add web_archives/
+        
+        # 5. 提交并推送
+        git commit -m "📦 网页存档 $(date +'%Y-%m-%d %H:%M')" || echo "无新存档"
+        git push origin main || echo "推送失败"
+
+        # git pull origin main --rebase || true  # 先拉取更新
+        # git add web_archives/ || true
+        git commit -m "📦 网页存档 $(date +'%Y-%m-%d %H:%M')" || echo "无新存档"
+        git push || echo "推送失败，下次再试"
