@@ -41,7 +41,7 @@ jobs:
       run: |
         python bot_handler.py "${{ github.event.inputs.message }}"
     
-      - name: 提交网页存储到仓库
+          - name: 提交网页存储到仓库
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
