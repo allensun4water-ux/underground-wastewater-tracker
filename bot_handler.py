@@ -33,46 +33,60 @@ FEISHU_APP_ID = os.environ.get('FEISHU_APP_ID')
 FEISHU_APP_SECRET = os.environ.get('FEISHU_APP_SECRET')
 
 def extract_with_kimi(url, title, content):
-    """调用 Kimi API 提取信息"""
+    """Kimi提取（无上下文，每次独立）"""
+    
     if not KIMI_API_KEY:
-        print("没有 KIMI_API_KEY，使用简单提取")
+        print("无KIMI_KEY，使用简单提取")
         return simple_extract(url, title, content)
     
     api_url = "https://api.moonshot.cn/v1/chat/completions"
     
-    prompt = f"""从以下新闻中提取地下式污水处理厂的信息，返回JSON格式。
+    # 关键：system 指令强制要求只分析当前网页
+    system_prompt = """你是专业的环保工程信息提取助手。
+重要规则：
+1. 只分析用户提供的当前网页内容
+2. 不要参考之前的任何对话或信息
+3. 如果当前网页信息不足，明确返回 null
+4. 必须基于当前网页的标题和正文提取"""
 
-URL: {url}
-标题: {title}
-正文: {content[:6000]}
+    # 用户提示词，包含完整网页内容
+    user_prompt = f"""请从以下网页中提取地下式污水处理厂信息：
 
-请提取以下字段，没有的信息填 null：
-- 项目名称（标准全称）
-- 近期规模（万吨/日，数字）
-- 工程总投资（亿元，数字）
+【网页URL】{url}
+
+【网页标题】{title}
+
+【网页正文】{content[:8000]}
+
+请提取以下字段（当前网页中找不到的填 null）：
+- 项目名称（必须基于当前网页标题或正文）
+- 近期规模（万吨/日）
+- 工程总投资（亿元）
 - 地理位置（省·市）
-- 投资方/总包方（公司全称）
-- 设计方（公司全称）
-- 施工方（公司全称）
-- 水处理流程（如AAO+MBR）
-- 执行标准（如一级A、地表IV类）
-- 原文摘要（前500字）
+- 投资方/总包方
+- 设计方
+- 施工方
+- 水处理流程
+- 执行标准
+- 原文摘要（当前网页前500字）
 
-返回格式：
+返回严格JSON格式：
 {{
-    "项目名称": "...",
-    "近期规模": 15,
-    "工程总投资": 12.5,
-    "地理位置": "浙江嘉兴",
-    "投资方/总包方": "...",
+    "项目名称": "基于当前网页的正确名称",
+    "近期规模": null,
+    "工程总投资": null,
+    "地理位置": "",
+    "投资方/总包方": "",
     "设计方": null,
     "施工方": null,
-    "水处理流程": "AAO+MBR",
-    "执行标准": "一级A",
-    "原文摘要": "..."
+    "水处理流程": "",
+    "执行标准": "",
+    "原文摘要": "当前网页摘要..."
 }}
+
+注意：如果当前网页是"余杭污水处理厂"，就必须返回"余杭污水处理厂"，绝不能返回"嘉兴城东再生水厂"等其他项目名称！
 """
-    
+
     headers = {
         "Authorization": f"Bearer {KIMI_API_KEY}",
         "Content-Type": "application/json"
@@ -81,8 +95,8 @@ URL: {url}
     data = {
         "model": "moonshot-v1-8k",
         "messages": [
-            {"role": "system", "content": "你是专业的环保工程信息提取助手。"},
-            {"role": "user", "content": prompt}
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt}
         ],
         "temperature": 0.1,
         "response_format": {"type": "json_object"}
@@ -90,17 +104,39 @@ URL: {url}
     
     try:
         status, resp_text = http_post(api_url, headers=headers, data=data, timeout=60)
+        print(f"Kimi状态: {status}")
+        
         if status == 200:
             result = json.loads(resp_text)
-            content = result['choices'][0]['message']['content']
-            extracted = json.loads(content)
-            extracted['_source'] = 'kimi'
+            content_str = result['choices'][0]['message']['content']
+            extracted = json.loads(content_str)
+            
+            print(f"Kimi原始返回: {extracted}")
+            
+            # 验证：检查项目名称是否合理
+            result_name = extracted.get("项目名称", "")
+            
+            # 如果Kimi返回的名称和网页标题差异太大，使用网页标题
+            if title and len(title) > 5:
+                # 提取标题中的关键词（去掉常见词）
+                title_clean = re.sub(r'(中标|开工|投产|正式|项目|工程|污水|处理|厂)', '', title)
+                name_clean = re.sub(r'(中标|开工|投产|正式|项目|工程|污水|处理|厂)', '', result_name)
+                
+                # 简单判断：如果标题和返回名称没有共同字，可能错了
+                common_chars = set(title_clean) & set(name_clean)
+                if len(common_chars) < 2 and len(title_clean) > 3:
+                    print(f"警告：Kimi返回可能不准确，使用网页标题")
+                    print(f"  原标题: {title}")
+                    print(f"  Kimi返回: {result_name}")
+                    extracted["项目名称"] = title[:50]
+            
             return extracted
         else:
-            print(f"Kimi API 错误: {status} {resp_text[:200]}")
+            print(f"Kimi错误: {resp_text[:200]}")
             return simple_extract(url, title, content)
+            
     except Exception as e:
-        print(f"Kimi 调用异常: {e}")
+        print(f"Kimi异常: {e}")
         return simple_extract(url, title, content)
 
 def simple_extract(url, title, content):
