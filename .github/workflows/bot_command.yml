@@ -1,0 +1,50 @@
+# .github/workflows/bot_command.yml
+name: 飞书机器人处理
+
+on:
+  workflow_dispatch:
+    inputs:
+      message:
+        description: '用户发送的消息（包含链接）'
+        required: true
+        default: ''
+
+jobs:
+  process:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: 设置Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+    
+    - name: 安装依赖
+      run: pip install requests beautifulsoup4
+    
+    - name: 处理消息
+      env:
+        # 飞书机器人
+        FEISHU_BOT_WEBHOOK: ${{ secrets.FEISHU_WEBHOOK }}
+        # 飞书应用
+        FEISHU_APP_ID: ${{ secrets.FEISHU_APP_ID }}
+        FEISHU_APP_SECRET: ${{ secrets.FEISHU_APP_SECRET }}
+        # 主表（项目表）
+        FEISHU_BASE_ID: ${{ secrets.FEISHU_BASE_ID }}
+        FEISHU_TABLE_ID: ${{ secrets.FEISHU_TABLE_ID }}
+        # 明细表（可以相同base，不同table）
+        FEISHU_DETAIL_BASE_ID: ${{ secrets.FEISHU_BASE_ID }}
+        FEISHU_DETAIL_TABLE_ID: ${{ secrets.FEISHU_DETAIL_TABLE_ID }}
+        # Kimi API
+        KIMI_API_KEY: ${{ secrets.KIMI_API_KEY }}
+      run: |
+        python bot_handler.py "${{ github.event.inputs.message }}"
+    
+    - name: 提交网页存档到仓库
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git add web_archives/ || true
+        git commit -m "📦 网页存档 $(date +'%Y-%m-%d %H:%M')" || echo "无新存档"
+        git push || echo "推送失败"
