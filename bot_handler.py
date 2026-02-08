@@ -193,22 +193,57 @@ def send_feishu_message(chat_id, content):
         return False
 
 def fetch_webpage(url):
-    """获取网页内容"""
+    """获取网页内容（加强版）"""
     try:
-        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            html = resp.read().decode('utf-8')
+        import urllib.request
+        req = urllib.request.Request(
+            url, 
+            headers={
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'Accept-Language': 'zh-CN,zh;q=0.9'
+            }
+        )
+        
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            html = resp.read().decode('utf-8', errors='ignore')
             
-            # 简单提取标题和正文
-            title_match = re.search(r'<title>(.*?)</title>', html, re.DOTALL)
+            # 提取标题
+            title_match = re.search(r'<title[^>]*>(.*?)</title>', html, re.DOTALL | re.IGNORECASE)
             title = title_match.group(1).strip() if title_match else ""
+            title = re.sub(r'\s+', ' ', title)  # 清理空白
             
-            # 去除标签，保留文本
-            text = re.sub(r'<[^>]+>', ' ', html)
+            # 提取正文（更智能）
+            # 尝试找文章正文区域
+            content = ""
+            
+            # 方法1：找 article 标签
+            article_match = re.search(r'<article[^>]*>(.*?)</article>', html, re.DOTALL | re.IGNORECASE)
+            if article_match:
+                content = article_match.group(1)
+            else:
+                # 方法2：找常见的正文div
+                for class_name in ['content', 'rich_media_content', 'article-content', 'post-content']:
+                    pattern = f'<div[^>]*class=["\'][^"\']*{class_name}[^"\']*["\'][^>]*>(.*?)</div>'
+                    match = re.search(pattern, html, re.DOTALL | re.IGNORECASE)
+                    if match:
+                        content = match.group(1)
+                        break
+            
+            # 如果没找到，用整个body
+            if not content:
+                body_match = re.search(r'<body[^>]*>(.*?)</body>', html, re.DOTALL | re.IGNORECASE)
+                content = body_match.group(1) if body_match else html
+            
+            # 去除标签
+            text = re.sub(r'<[^>]+>', ' ', content)
             text = re.sub(r'\s+', ' ', text).strip()
             
-            return {"success": True, "title": title, "content": text[:8000]}
+            print(f"获取网页成功: 标题={title[:50]}, 内容长度={len(text)}")
+            return {"success": True, "title": title, "content": text}
+            
     except Exception as e:
+        print(f"获取网页失败: {e}")
         return {"success": False, "error": str(e)}
 
 def archive_webpage(url, project_id):
